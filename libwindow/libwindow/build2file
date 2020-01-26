@@ -1,0 +1,51 @@
+int_libs = # Interface dependencies.
+imp_libs = # Implementation dependencies.
+import imp_libs += libcommon%lib{common}
+
+lib{window}: {hxx ixx txx cxx}{** -version} hxx{version} $imp_libs $int_libs
+
+# Include the generated version header into the distribution (so that we don't
+# pick up an installed one) and don't remove it when cleaning in src (so that
+# clean results in a state identical to distributed).
+#
+hxx{version}: in{version} $src_root/manifest
+{
+  dist  = true
+  clean = ($src_root != $out_root)
+}
+
+# Build options.
+#
+cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+obja{*}: cxx.poptions += -DLIBWINDOW_STATIC_BUILD
+objs{*}: cxx.poptions += -DLIBWINDOW_SHARED_BUILD
+
+# Export options.
+#
+lib{window}:
+{
+  cxx.export.poptions = "-I$out_root" "-I$src_root"
+  cxx.export.libs = $int_libs
+}
+
+liba{window}: cxx.export.poptions += -DLIBWINDOW_STATIC
+libs{window}: cxx.export.poptions += -DLIBWINDOW_SHARED
+
+# For pre-releases use the complete version to make sure they cannot be used
+# in place of another pre-release or the final version. See the version module
+# for details on the version.* variable values.
+#
+if $version.pre_release
+  lib{window}: bin.lib.version = @"-$version.project_id"
+else
+  lib{window}: bin.lib.version = @"-$version.major.$version.minor"
+
+# Install into the libwindow/ subdirectory of, say, /usr/include/
+# recreating subdirectories.
+#
+{hxx ixx txx}{*}:
+{
+  install         = include/libwindow/
+  install.subdirs = true
+}

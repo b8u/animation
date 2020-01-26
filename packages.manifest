@@ -1,0 +1,8 @@
+: 1
+location: libcommon/
+:
+location: libdxerr/
+:
+location: libwindow/
+:
+location: animation/

@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libdxerr/
+}
+
+export $out_root/libdxerr/$import.target

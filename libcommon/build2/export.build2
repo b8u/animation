@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libcommon/
+}
+
+export $out_root/libcommon/$import.target

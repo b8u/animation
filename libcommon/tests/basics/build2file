@@ -1,0 +1,3 @@
+import libs = libcommon%lib{common}
+
+exe{driver}: {hxx ixx txx cxx}{**} $libs testscript{**}

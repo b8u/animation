@@ -1,0 +1,12 @@
+: 1
+name: libdxerr
+version: 0.1.0-a.0.z
+project: animation2
+summary: dxerr C++ library
+license: proprietary
+description-file: README.md
+url: https://example.org/animation2
+email: lily.coder@gmail.com
+depends: * build2 >= 0.12.0
+depends: * bpkg >= 0.12.0
+depends: libcommon

@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libwindow/
+}
+
+export $out_root/libwindow/$import.target
