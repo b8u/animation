@@ -1,0 +1,7 @@
+$out_root/
+{
+  include libpng/
+}
+
+export $out_root/libpng/$import.target
+
