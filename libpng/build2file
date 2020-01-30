@@ -1,29 +1,5 @@
-int_libs = # Interface dependencies.
-imp_libs = # Implementation dependencies.
-import imp_libs += libz%lib{z}
-
-lib{png}: c{libpng/png.c}      \
-          c{libpng/png.c}      \
-          c{libpng/pngerror.c} \
-          c{libpng/pngget.c}   \
-          c{libpng/pngmem.c}   \
-          c{libpng/pngpread.c} \
-          c{libpng/pngread.c}  \
-          c{libpng/pngrio.c}   \
-          c{libpng/pngrtran.c} \
-          c{libpng/pngrutil.c} \
-          c{libpng/pngset.c}   \
-          c{libpng/pngtrans.c} \
-          c{libpng/pngwio.c}   \
-          c{libpng/pngwrite.c} \
-          c{libpng/pngwtran.c} \
-          c{libpng/pngwutil.c} \
-          h{libpng/png.h}      \
-          $imp_libs $int_libs
-
-./: lib{png}  manifest
+./: {*/ -build2/} manifest
 
 # Don't install tests.
 #
 tests/: install = false
-

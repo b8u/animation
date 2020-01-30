@@ -2,6 +2,7 @@ libs =
 import libs += libwindow%liba{window}
 import libs += libdxerr%liba{dxerr}
 import libs += libcommon%lib{common}
+import libs += libpng%lib{png}
 
 exe{animation}: {hxx ixx txx cxx}{**} $libs testscript
 

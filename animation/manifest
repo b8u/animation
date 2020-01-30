@@ -12,3 +12,4 @@ depends: * bpkg >= 0.12.0
 depends: libwindow
 depends: libdxerr
 depends: libcommon
+depends: libpng
