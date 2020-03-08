@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libwindow/export.hpp>
+//#include <libwindow/export.hpp>
 
 #include <optional>
 
@@ -38,6 +38,7 @@ namespace window
       virtual ~Window();
 
       std::optional<int> ProcessMessages() noexcept;
+      inline HWND handle() const noexcept { return window_handle_; }
       
     public:
       static LRESULT CALLBACK HandleMsgSetup(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept;

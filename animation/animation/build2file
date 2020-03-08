@@ -6,4 +6,6 @@ import libs += libpng%lib{png}
 
 exe{animation}: {hxx ixx txx cxx}{**} $libs testscript
 
-cxx.poptions =+ "-I$out_root" "-I$src_root"
+cxx.poptions =+ "-I$out_root" "-I$src_root" 
+#cc.coptions =+ /ZW /EHsc
+cxx.loptions =+ "/subsystem:console" "d3d11.lib" "dxguid.lib" "D3DCompiler.lib"

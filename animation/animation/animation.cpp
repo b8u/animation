@@ -14,3 +14,8 @@ int WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     return -1;
   }
 }
+
+int main()
+{
+  return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOWNORMAL);
+}

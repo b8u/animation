@@ -5,6 +5,4 @@ location: libdxerr/
 :
 location: libwindow/
 :
-location: libpng/
-:
 location: animation/

@@ -1,11 +1,13 @@
 #pragma once
 #include <libwindow/window.hpp>
+#include <animation/Graphics.hpp>
 
 class Window : public window::Window
 {
   public:
-    using window::Window::Window;
+    Window(const window::WndClass& wnd_class, int width, int height, const char* title);
 
+    inline Graphics& gfx() noexcept { return graphics_; }
   private:
     LRESULT HandleMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept final
     {
@@ -19,4 +21,7 @@ class Window : public window::Window
 
       return window::Window::HandleMsg(hWnd, msg, wParam, lParam);
     }
+
+  private:
+    Graphics graphics_;
 };

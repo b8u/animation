@@ -1,0 +1,512 @@
+#include "Graphics.hpp"
+
+#include <png.h>
+
+#include <sstream>
+#include <memory>
+#include <cassert>
+#include <optional>
+#include <filesystem>
+#include <iostream>
+
+#include <d3dcompiler.h>
+
+
+
+
+
+//---
+struct Square
+{
+  
+};
+//---
+
+namespace fs = std::filesystem;
+
+
+// TODO: png_set_read_fn() and png_set_write_fn()
+struct FileDeleter
+{ 
+  void operator()(FILE *ptr) const noexcept
+  {
+    if (ptr) {
+      fclose(ptr);
+    }
+  }
+};
+
+static std::optional<RawImage> loadPngImage(const fs::path& png_path)
+{
+  std::unique_ptr<FILE, FileDeleter> fp{fopen( png_path.string().c_str(), "rb"), FileDeleter{}};
+  if (!fp) return std::nullopt;
+
+  // Лучше не трогать. В этом деле замешен еще info_ptr.
+  png_structp png_ptr = png_create_read_struct(
+      PNG_LIBPNG_VER_STRING,
+      nullptr,  // error_ptr
+      nullptr,  // error_fn
+      nullptr); // warn_fn
+
+  if (!png_ptr) return std::nullopt;
+
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+    return std::nullopt;
+  }
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+    return std::nullopt;
+  }
+
+  // TODO: better to set functions.
+  png_init_io(png_ptr, fp.get());
+
+  // We didn't read anything, did we?
+  //png_set_sig_bytes(png_ptr, sig_read);
+
+  png_read_png(
+      png_ptr,
+      info_ptr,
+      PNG_TRANSFORM_STRIP_16 |  // Strip 16-bit samples to 8 bits
+      PNG_TRANSFORM_PACKING |   // Expand 1, 2 and 4-bit samples to bytes
+      PNG_TRANSFORM_EXPAND,     // Perform set_expand() ?? png_set_palette_to_rgb ??
+      nullptr // not used (in library)
+  );
+
+
+  struct png_info
+  {
+    png_uint_32 width{};
+    png_uint_32 height{};
+    int color_type{};
+    int interlace_type{};
+    int bit_depth{};
+  };
+
+  
+
+  const png_info img_info = [](png_structp png_ptr, png_infop info_ptr) {
+    png_info info;
+
+    png_get_IHDR(png_ptr, info_ptr, &info.width, &info.height, &info.bit_depth, &info.color_type, &info.interlace_type,
+        nullptr, // compression_method
+        nullptr  // filter_method
+    );
+    
+    return info;
+  }(png_ptr, info_ptr);
+
+  RawImage image{img_info.width, img_info.height};
+  assert(image.width == 576);
+
+  //assert(color_type == PNG_COLOR_TYPE_RGB);
+  //assert(bit_depth == 8); // per channel
+
+  const size_t row_size = png_get_rowbytes(png_ptr, info_ptr);
+  image.row_size = row_size;
+
+  image.data.reserve(row_size * image.height);
+
+  png_bytepp row_pointers = png_get_rows(png_ptr, info_ptr);
+  for (size_t i = 0; i < image.height; ++i) {
+    std::copy(row_pointers[i], row_pointers[i] + row_size, std::back_inserter(image.data));
+  }
+
+  png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+
+  return {std::move(image)};
+}
+
+
+
+namespace MS = Microsoft;
+
+
+class HResult
+{
+  public:
+    constexpr HResult() noexcept = default;
+    constexpr HResult(const HResult&) = default;
+
+    constexpr HResult(HRESULT value) noexcept : value_(value) {}
+    constexpr HRESULT value() const noexcept { return value_; }
+
+    inline constexpr operator bool() const noexcept { return SUCCEEDED(value()); }
+    inline constexpr explicit operator HRESULT() const noexcept { return value(); }
+
+    inline HResult& operator=(HRESULT value) noexcept
+    {
+      value_ = value;
+      return *this;
+    }
+
+    inline bool operator==(HRESULT value) const noexcept { return value == value_; }
+
+  private:
+    HRESULT value_{};
+};
+
+Graphics::Graphics(UINT w, UINT h, HWND hwnd)
+{
+    const DXGI_SWAP_CHAIN_DESC swapDesc = CreateSwapChainDesc(w, h, hwnd);
+
+    UINT swapCreateFlags = 0u;
+#ifndef NDEBUG
+    swapCreateFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif  // !NDEBUG
+
+    D3D_FEATURE_LEVEL feature_level{};
+
+    if (HResult res = D3D11CreateDeviceAndSwapChain(
+            nullptr,                   // _In_opt_                            IDXGIAdapter*         pAdapter,
+            D3D_DRIVER_TYPE_HARDWARE,  //                                     D3D_DRIVER_TYPE       DriverType,
+            nullptr,                   //                                     HMODULE               Software,
+            swapCreateFlags,           //                                     UINT                  Flags,
+            nullptr,                   // _In_reads_opt_(FeatureLevels) CONST D3D_FEATURE_LEVEL*    pFeatureLevels,
+            0,                         //                                     UINT FeatureLevels,
+            D3D11_SDK_VERSION,         //                                     UINT                  SDKVersion,
+            &swapDesc,                 // _In_opt_                      CONST DXGI_SWAP_CHAIN_DESC* pSwapChainDesc,
+            &swapchain_,               // _COM_Outptr_opt_                    IDXGISwapChain**      ppSwapChain,
+            &device_,                  // _COM_Outptr_opt_                    ID3D11Device**        ppDevice,
+            &feature_level,            // _Out_opt_                           D3D_FEATURE_LEVEL*    pFeatureLevel,
+            &context_);                // _COM_Outptr_opt_                    ID3D11DeviceContext** ppImmediateContext
+        !res) {
+        //throw Exception(res, __LINE__, __FILE__);
+    }
+
+    {
+        std::stringstream oss;
+        oss << "Feature Level: 0x" << std::hex << feature_level << "\n";
+        std::string feature_level_str = oss.str();
+        OutputDebugString(feature_level_str.c_str());
+    }
+
+    // gain access to texture subresource in swap chain (back buffer)
+    MS::WRL::ComPtr<ID3D11Resource> back_buffer;
+    if (HResult res = swapchain_->GetBuffer(0, __uuidof(ID3D11Resource), &back_buffer); !res) {
+        //throw Exception(res, __LINE__, __FILE__);
+    }
+    if (HResult res = device_->CreateRenderTargetView(back_buffer.Get(),
+                                                             nullptr,  // _In_opt_ const D3D11_RENDER_TARGET_VIEW_DESC*
+                                                             &target_view_);
+        !res) {
+        //throw Exception(res, __LINE__, __FILE__);
+    }
+
+    // create depth stensil state
+    D3D11_DEPTH_STENCIL_DESC dsDesc = {};
+    dsDesc.DepthEnable = TRUE;
+    dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    dsDesc.DepthFunc = D3D11_COMPARISON_LESS;
+    MS::WRL::ComPtr<ID3D11DepthStencilState> pDSState;
+    device_->CreateDepthStencilState(&dsDesc, &pDSState);
+
+    // bind depth state
+    context_->OMSetDepthStencilState(pDSState.Get(), 1u);
+
+
+    // create depth stensil texture
+    MS::WRL::ComPtr<ID3D11Texture2D> depthStencil;
+    D3D11_TEXTURE2D_DESC descDepth{};
+    descDepth.Width = w;
+    descDepth.Height = h;
+    descDepth.MipLevels = 1u;
+    descDepth.ArraySize = 1u;
+    descDepth.Format = DXGI_FORMAT_D32_FLOAT;
+    descDepth.SampleDesc.Count = 1u;
+    descDepth.SampleDesc.Quality = 0u;
+    descDepth.Usage = D3D11_USAGE_DEFAULT;
+    descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    if (const HResult res = device_->CreateTexture2D(&descDepth, nullptr, &depthStencil);
+        !res) {
+        //throw Exception(res, __LINE__, __FILE__);
+    }
+
+    // create view of depth stensil texture
+    D3D11_DEPTH_STENCIL_VIEW_DESC descDSV = {};
+    descDSV.Format = DXGI_FORMAT_D32_FLOAT;
+    descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    descDSV.Texture2D.MipSlice = 0u;
+    if (const HResult res = device_->CreateDepthStencilView(
+          depthStencil.Get(),
+          &descDSV,
+          &depth_stencil_view_); !res) {
+        //throw Exception(res, __LINE__, __FILE__);
+    }
+
+
+    // bind depth stensil view to OM (but we don't have it yet).
+    context_->OMSetRenderTargets(1u,                           // UINT NumViews
+                                 target_view_.GetAddressOf(),  //
+                                 depth_stencil_view_.Get());   // ID3D11DepthStencilView * pDepthStencilView
+
+    LoadPNG();
+    LoadShaders();
+    SetVertices();
+
+
+}
+
+void Graphics::LoadShaders()
+{
+    if (HResult res = D3DReadFileToBlob(LR"(animation\shaders\vsd.fxc)", &vertex_shader_blob_); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << std::endl;
+      std::terminate();
+    }
+    if (HResult res = device_->CreateVertexShader(
+          vertex_shader_blob_->GetBufferPointer(),
+          vertex_shader_blob_->GetBufferSize(),
+          nullptr,
+          &vertex_shader_); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+     
+    Microsoft::WRL::ComPtr<ID3DBlob> bytecode_blob_;
+    if (HResult res = D3DReadFileToBlob(LR"(animation\shaders\psd.fxc)", &bytecode_blob_); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << std::endl;
+      std::terminate();
+    }
+    if (HResult res = device_->CreatePixelShader(bytecode_blob_->GetBufferPointer(), bytecode_blob_->GetBufferSize(), nullptr, &pixel_shader_); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << std::endl;
+      std::terminate();
+    }
+
+}
+
+void Graphics::LoadPNG()
+{
+  // 576 x 24
+  const fs::path doux = "D:\\cppprjs\\animation\\assets\\DinoSprites - doux.png";
+  const auto image = loadPngImage(doux);
+  if (image) {
+    std::cout << "Image: " << image->width << "x" << image->height << ", row size: " << image->row_size << "\n";
+    sprite_ = std::move(*image);
+  }
+  else {
+    std::cerr << "loadPngImage failed\n";
+    return;
+  }
+
+
+  {
+    //Creating shader resource view
+    {
+      D3D11_TEXTURE2D_DESC desc;
+      ZeroMemory(&desc, sizeof(desc));
+      desc.Width              = image->width; // in texels
+      desc.Height             = image->height;
+      desc.MipLevels          = 1;
+      desc.ArraySize          = 1;
+      desc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
+      desc.SampleDesc.Count   = 1;
+      desc.SampleDesc.Quality = 0;
+      desc.Usage              = D3D11_USAGE_DEFAULT;
+      desc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
+      desc.CPUAccessFlags     = 0;
+      desc.MiscFlags = 0;
+
+      D3D11_SUBRESOURCE_DATA subResource;
+      subResource.pSysMem = image->data.data();
+      subResource.SysMemPitch = desc.Width * 4;
+      subResource.SysMemSlicePitch = 0;
+      auto result = device_->CreateTexture2D(&desc, &subResource, &texture_);
+      //check to make sure that texture is created correctly
+      assert(SUCCEEDED(result) && "issue creating texture\n");
+
+
+      // Create texture view
+      D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+      srvDesc.Format                    = desc.Format;
+      srvDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+      srvDesc.Texture2D.MipLevels       = desc.MipLevels;
+      srvDesc.Texture2D.MostDetailedMip = 0;
+      result = device_->CreateShaderResourceView(texture_.Get(), &srvDesc, &texture_view_);
+      //check to make sure that resource view is created correctly
+      assert(SUCCEEDED(result) && "issue creating shaderResourceView \n");
+
+    }
+    //Creating Sampler
+    {
+      D3D11_SAMPLER_DESC desc = {};
+      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+      desc.AddressU       = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressV       = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressW       = D3D11_TEXTURE_ADDRESS_WRAP;
+
+      auto result = device_->CreateSamplerState(&desc, &sampler_);
+      //check that sampler state created correctly.
+      assert(SUCCEEDED(result) && "problem creating sampler\n");
+    }
+    //return true;
+  }
+
+}
+
+void Graphics::SetVertices()
+{
+
+  /*
+   *   1-----2
+   *   |\    |
+   *   | \   |
+   *   |  \  |
+   *   |   \ |
+   *   |    \|
+   *   4-----3
+   *
+   *   [-1; 1] - [1; -1]
+   *
+   *   1: (-0.9f,  0.9f)   2: (0.9f,  0.9f)
+   *   4: (-0.9f, -0.9f)   3: (0.9f, -0.9f)
+   */
+
+    const Vertex vertices[] =
+      { { -0.9f,  0.9f } // 1 
+      , {  0.9f,  0.9f } // 2
+      , {  0.9f, -0.9f } // 3
+      , { -0.9f, -0.9f } // 3
+      };
+
+    const unsigned short indices[] =
+      { 0, 1, 2
+      , 0, 2, 3
+      };
+
+    draw_size_ = std::size(indices);
+
+    // vertices
+    D3D11_BUFFER_DESC bd = {};
+    bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
+    bd.Usage               = D3D11_USAGE_DEFAULT;
+    bd.CPUAccessFlags      = 0u;
+    bd.MiscFlags           = 0u;
+    bd.ByteWidth           = sizeof( vertices );
+    bd.StructureByteStride = sizeof( Vertex );
+
+    D3D11_SUBRESOURCE_DATA sd = {};
+    sd.pSysMem = vertices;
+    device_->CreateBuffer(&bd, &sd, &buffer_);
+
+    // indices
+    D3D11_BUFFER_DESC ibd = {};
+    ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER;
+    ibd.Usage               = D3D11_USAGE_DEFAULT;
+    ibd.CPUAccessFlags      = 0u;
+    ibd.MiscFlags           = 0u;
+    ibd.ByteWidth           = sizeof(indices);
+    ibd.StructureByteStride = sizeof(unsigned short);
+
+    D3D11_SUBRESOURCE_DATA isd = {};
+    isd.pSysMem = indices;
+    device_->CreateBuffer(&ibd, &isd, &index_buffer_);
+
+
+    // layout
+    const D3D11_INPUT_ELEMENT_DESC ied[] =
+      { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+        ,
+      };
+    
+    if (HResult res = device_->CreateInputLayout(
+        ied,
+        (UINT)std::size(ied),
+        vertex_shader_blob_->GetBufferPointer(),
+        vertex_shader_blob_->GetBufferSize(),
+        &input_layout_); !res) {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+}
+
+void Graphics::DrawAllThisShit()
+{
+  assert(buffer_ && "vertex buffer is empty");
+
+
+  // TODO: do it in draw call
+  const UINT stride = sizeof(Vertex);
+  const UINT offset = 0u;
+
+  context_->IASetVertexBuffers(0u, 1u, buffer_.GetAddressOf(), &stride, &offset);
+  context_->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0u);
+  context_->IASetInputLayout(input_layout_.Get());
+  context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  context_->VSSetShader(vertex_shader_.Get(), nullptr, 0u);
+  context_->PSSetShader(pixel_shader_.Get(), nullptr, 0u);
+//  context_->PSSetShaderResource(0u, 1u, texture_view_->GetAddressOf());
+
+  // configure viewport
+  {
+    D3D11_VIEWPORT vp;
+    vp.Width    = 640;
+    vp.Height   = 480;
+    vp.MinDepth = 0;
+    vp.MaxDepth = 1;
+    vp.TopLeftX = 0;
+    vp.TopLeftY = 0;
+    context_->RSSetViewports( 1u,&vp );
+  }
+
+  context_->DrawIndexed((UINT)draw_size_, 0u, 0u);
+}
+
+void Graphics::EndFrame()
+{
+    if (HResult res = swapchain_->Present(1u, 0u); !res) {
+        if (res == DXGI_ERROR_DEVICE_REMOVED) {
+            // throw GFX_DEVICE_REMOVED_EXCEPT(pDevice->GetDeviceRemovedReason());
+            std::terminate();
+        } else {
+//            throw Exception(res, __LINE__, __FILE__);
+        }
+    }
+}
+
+void Graphics::BeginFrame(float red, float green, float blue) noexcept
+{
+    const float color[] = {red, green, blue, 1.0f};
+    context_->ClearRenderTargetView(target_view_.Get(), color);
+    context_->ClearDepthStencilView(depth_stencil_view_.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0u);
+}
+
+DXGI_SWAP_CHAIN_DESC Graphics::CreateSwapChainDesc(UINT w, UINT h, HWND hwnd) noexcept
+{
+    return {
+        // DXGI_MODE_DESC BufferDesc;
+        {
+            w,
+            h,
+
+            // DXGI_RATIONAL RefreshRate;
+            {
+                60,  // UINT Numerator;
+                1    // UINT Denominator;
+            },
+
+            DXGI_FORMAT_R8G8B8A8_UNORM,            // DXGI_FORMAT Format;
+            DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,  // DXGI_MODE_SCANLINE_ORDER ScanlineOrdering;
+            DXGI_MODE_SCALING_UNSPECIFIED,         // DXGI_MODE_SCALING Scaling;
+        },
+
+        // DXGI_SAMPLE_DESC SampleDesc
+        {
+            1,  // UINT Count
+            0   // UINT Quality
+        },
+
+        DXGI_USAGE_RENDER_TARGET_OUTPUT,  // DXGI_USAGE BufferUsage;
+        1,                                // UINT BufferCount;
+        hwnd,                             // HWND OutputWindow;
+        TRUE,                             // BOOL Windowed;
+        DXGI_SWAP_EFFECT_DISCARD,         // DXGI_SWAP_EFFECT SwapEffect;
+        0,                                // UINT Flags;
+    };
+}

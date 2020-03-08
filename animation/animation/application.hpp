@@ -7,6 +7,7 @@ class Application
     Application() = default;
 
     int Run();
+    void DoFrame();
 
   private:
     window::WndClass wnd_class_{&Window::HandleMsgSetup};
