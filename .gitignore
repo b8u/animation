@@ -1,1 +1,5 @@
 .bdep
+animation/animation/shaders/ps.fxc
+animation/animation/shaders/psd.fxc
+animation/animation/shaders/vs.fxc
+animation/animation/shaders/vsd.fxc

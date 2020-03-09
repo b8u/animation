@@ -336,7 +336,7 @@ void Graphics::LoadPNG()
     //Creating Sampler
     {
       D3D11_SAMPLER_DESC desc = {};
-      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
       desc.AddressU       = D3D11_TEXTURE_ADDRESS_WRAP;
       desc.AddressV       = D3D11_TEXTURE_ADDRESS_WRAP;
       desc.AddressW       = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -369,10 +369,11 @@ void Graphics::SetVertices()
    */
 
     const Vertex vertices[] =
-      { { -0.9f,  0.9f } // 1 
-      , {  0.9f,  0.9f } // 2
-      , {  0.9f, -0.9f } // 3
-      , { -0.9f, -0.9f } // 3
+      //     x ,    y ,          u ,   v
+      { { -0.9f,  0.9f,           0.0f, 0.0f } // 1  
+      , {  0.9f,  0.9f, 24.0f / 576.0f, 0.0f } // 2
+      , {  0.9f, -0.9f, 24.0f / 576.0f, 1.0f } // 3
+      , { -0.9f, -0.9f,           0.0f, 1.0f } // 4
       };
 
     const unsigned short indices[] =
@@ -412,7 +413,7 @@ void Graphics::SetVertices()
     // layout
     const D3D11_INPUT_ELEMENT_DESC ied[] =
       { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-        ,
+      , { "TexCoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
       };
     
     if (HResult res = device_->CreateInputLayout(
@@ -441,12 +442,13 @@ void Graphics::DrawAllThisShit()
   context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   context_->VSSetShader(vertex_shader_.Get(), nullptr, 0u);
   context_->PSSetShader(pixel_shader_.Get(), nullptr, 0u);
-//  context_->PSSetShaderResource(0u, 1u, texture_view_->GetAddressOf());
+  context_->PSSetShaderResources(0u, 1u, texture_view_.GetAddressOf());
+  context_->PSSetSamplers(0u, 1u, sampler_.GetAddressOf());
 
   // configure viewport
   {
     D3D11_VIEWPORT vp;
-    vp.Width    = 640;
+    vp.Width    = 480;
     vp.Height   = 480;
     vp.MinDepth = 0;
     vp.MaxDepth = 1;
