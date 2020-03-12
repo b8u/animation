@@ -2,18 +2,26 @@
 
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 int Application::Run()
 {
+  using namespace std::chrono_literals;
   while (true) {
     if (const auto ecode = window_.ProcessMessages()) {
       return *ecode;
     } else {
-      using namespace std::chrono_literals;
-      std::this_thread::sleep_for(16ms);
+      std::this_thread::sleep_for(1ms);
     }
 
-    DoFrame();
+    static auto next_frame = std::chrono::steady_clock::now();
+    if (next_frame <= std::chrono::steady_clock::now()) {
+      next_frame = std::chrono::steady_clock::now() + 16ms;
+      //std::cout << "-- " << (next_frame - std::chrono::steady_clock::now()).count() << std::endl;
+      DoFrame();
+    } else {
+      //std::cout << "FALSE" << std::endl;
+    }
   }
   return 0;
 }

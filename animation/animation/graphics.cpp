@@ -12,15 +12,22 @@
 #include <d3dcompiler.h>
 
 
-
-
-
-//---
-struct Square
+bool Animation::Tick(AnimationFrame::dt_t elapsed)
 {
-  
-};
-//---
+  //std::cout << "Tick: " << elapsed.count() << std::endl;
+
+  if (deadline > elapsed) {
+    deadline -= elapsed;
+    return false;
+  } 
+
+  elapsed -= deadline;
+
+  ShiftFrame();
+  Tick(elapsed);
+  return true;
+}
+
 
 namespace fs = std::filesystem;
 
@@ -151,6 +158,14 @@ class HResult
 
 Graphics::Graphics(UINT w, UINT h, HWND hwnd)
 {
+  int count = 0;
+  for (int i = 408; i < 576; i += 24)
+  {
+    if (count >= 4) break; ++count;
+    AnimationFrame frame{ { i / 576.0f, 1.0f }, std::chrono::milliseconds{150} };
+    dino_animation_.frames.push_back(frame);
+  }
+
     const DXGI_SWAP_CHAIN_DESC swapDesc = CreateSwapChainDesc(w, h, hwnd);
 
     UINT swapCreateFlags = 0u;
@@ -394,6 +409,7 @@ void Graphics::SetVertices()
 
     D3D11_SUBRESOURCE_DATA sd = {};
     sd.pSysMem = vertices;
+
     device_->CreateBuffer(&bd, &sd, &buffer_);
 
     // indices
@@ -407,8 +423,29 @@ void Graphics::SetVertices()
 
     D3D11_SUBRESOURCE_DATA isd = {};
     isd.pSysMem = indices;
+
     device_->CreateBuffer(&ibd, &isd, &index_buffer_);
 
+    // uv animation
+    {
+      UVAligned default_offset{};
+
+      D3D11_BUFFER_DESC uv_desc = {};
+      uv_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+      uv_desc.Usage = D3D11_USAGE_DYNAMIC;
+      uv_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+      uv_desc.ByteWidth = sizeof default_offset;
+      uv_desc.StructureByteStride = sizeof UVAligned;
+
+      D3D11_SUBRESOURCE_DATA uv_sd = {};
+      uv_sd.pSysMem = &default_offset;
+
+      if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &uv_buffer_); !res)
+      {
+        std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+        std::terminate();
+      }
+    }
 
     // layout
     const D3D11_INPUT_ELEMENT_DESC ied[] =
@@ -432,15 +469,40 @@ void Graphics::DrawAllThisShit()
   assert(buffer_ && "vertex buffer is empty");
 
 
+  auto dt = std::chrono::steady_clock::now() - last_frame_;
+  last_frame_ = std::chrono::steady_clock::now();
+
+
   // TODO: do it in draw call
   const UINT stride = sizeof(Vertex);
   const UINT offset = 0u;
+
+
+  // TODO: handle animation
+  auto tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+  //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
+  if (dino_animation_.Tick(tmp))
+  {
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    if (HResult res = context_->Map(uv_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    static UVAligned newUV{ {0.0f, 0.0f} };
+    newUV.uv = dino_animation_.frame().uv;
+    memcpy(mapped.pData, &newUV, sizeof newUV);
+
+    context_->Unmap(uv_buffer_.Get(), 0);
+  }
 
   context_->IASetVertexBuffers(0u, 1u, buffer_.GetAddressOf(), &stride, &offset);
   context_->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0u);
   context_->IASetInputLayout(input_layout_.Get());
   context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   context_->VSSetShader(vertex_shader_.Get(), nullptr, 0u);
+  context_->VSSetConstantBuffers(0u, 1u, uv_buffer_.GetAddressOf());
   context_->PSSetShader(pixel_shader_.Get(), nullptr, 0u);
   context_->PSSetShaderResources(0u, 1u, texture_view_.GetAddressOf());
   context_->PSSetSamplers(0u, 1u, sampler_.GetAddressOf());
