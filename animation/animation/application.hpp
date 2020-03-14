@@ -1,5 +1,6 @@
 #pragma once
 #include <animation/window.hpp>
+#include <animation/settings.hpp>
 
 class Application
 {
@@ -11,5 +12,6 @@ class Application
 
   private:
     window::WndClass wnd_class_{&Window::HandleMsgSetup};
-    Window window_{wnd_class_, 480, 480, "Animation"};
+    Settings settings_;
+    Window window_{ wnd_class_, "Animation" };
 };

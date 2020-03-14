@@ -1,12 +1,14 @@
 #pragma once
 
 #include <libcommon/minimal_win.hpp>
+#include <animation/raw_image.hpp>
 #include <d3d11.h>
 #include <wrl/client.h>
 
 #include <array>
 #include <vector>
 #include <chrono>
+#include <cassert>
 
 struct UV
 {
@@ -22,10 +24,8 @@ struct UVAligned
 
 struct AnimationFrame
 {
-  using dt_t = std::chrono::duration<uint64_t, std::milli>;
-
   UV uv;
-  dt_t dt;
+  std::chrono::milliseconds dt;
 };
 
 struct Animation
@@ -33,9 +33,9 @@ struct Animation
   std::vector<AnimationFrame> frames;
 
   size_t frame_index;
-  AnimationFrame::dt_t deadline;
+  std::chrono::milliseconds deadline;
 
-  bool Tick(AnimationFrame::dt_t elapsed);
+  bool Tick(std::chrono::milliseconds elapsed);
 
   const AnimationFrame& frame() const noexcept { return frames[frame_index]; }
 
@@ -43,6 +43,13 @@ struct Animation
   {
     frame_index = (frame_index + 1) % frames.size();
     deadline = frames[frame_index].dt; 
+  }
+
+  void ResetFrame()
+  {
+    assert(!frames.empty());
+    frame_index = frames.size() - 1;
+    ShiftFrame();
   }
 };
 
@@ -55,16 +62,6 @@ struct Vertex
   float v;
 };
 
-struct RawImage
-{
-  size_t width = 0;
-  size_t height = 0;
-
-  // for debug
-  size_t row_size{};
-
-  std::vector<uint8_t> data;
-};
 
 
 class Graphics
@@ -99,7 +96,7 @@ class Graphics
   private:
     //win32::DxgiInfoManager info_manager_;
 
-    RawImage sprite_;
+    b8u::RawImage sprite_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture_view_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> buffer_;

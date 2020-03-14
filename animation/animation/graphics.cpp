@@ -1,6 +1,7 @@
-#include "Graphics.hpp"
+#include "graphics.hpp"
+#include "settings.hpp"
+#include "raw_image.hpp"
 
-#include <png.h>
 
 #include <sstream>
 #include <memory>
@@ -12,9 +13,9 @@
 #include <d3dcompiler.h>
 
 
-bool Animation::Tick(AnimationFrame::dt_t elapsed)
+bool Animation::Tick(std::chrono::milliseconds elapsed)
 {
-  //std::cout << "Tick: " << elapsed.count() << std::endl;
+  //std::cout << "Tick: " << elapsed.count() << ", deadline: " << deadline.count() << std::endl;
 
   if (deadline > elapsed) {
     deadline -= elapsed;
@@ -32,100 +33,6 @@ bool Animation::Tick(AnimationFrame::dt_t elapsed)
 namespace fs = std::filesystem;
 
 
-// TODO: png_set_read_fn() and png_set_write_fn()
-struct FileDeleter
-{ 
-  void operator()(FILE *ptr) const noexcept
-  {
-    if (ptr) {
-      fclose(ptr);
-    }
-  }
-};
-
-static std::optional<RawImage> loadPngImage(const fs::path& png_path)
-{
-  std::unique_ptr<FILE, FileDeleter> fp{fopen( png_path.string().c_str(), "rb"), FileDeleter{}};
-  if (!fp) return std::nullopt;
-
-  // Лучше не трогать. В этом деле замешен еще info_ptr.
-  png_structp png_ptr = png_create_read_struct(
-      PNG_LIBPNG_VER_STRING,
-      nullptr,  // error_ptr
-      nullptr,  // error_fn
-      nullptr); // warn_fn
-
-  if (!png_ptr) return std::nullopt;
-
-  png_infop info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr) {
-    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
-    return std::nullopt;
-  }
-
-  if (setjmp(png_jmpbuf(png_ptr))) {
-    png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-    return std::nullopt;
-  }
-
-  // TODO: better to set functions.
-  png_init_io(png_ptr, fp.get());
-
-  // We didn't read anything, did we?
-  //png_set_sig_bytes(png_ptr, sig_read);
-
-  png_read_png(
-      png_ptr,
-      info_ptr,
-      PNG_TRANSFORM_STRIP_16 |  // Strip 16-bit samples to 8 bits
-      PNG_TRANSFORM_PACKING |   // Expand 1, 2 and 4-bit samples to bytes
-      PNG_TRANSFORM_EXPAND,     // Perform set_expand() ?? png_set_palette_to_rgb ??
-      nullptr // not used (in library)
-  );
-
-
-  struct png_info
-  {
-    png_uint_32 width{};
-    png_uint_32 height{};
-    int color_type{};
-    int interlace_type{};
-    int bit_depth{};
-  };
-
-  
-
-  const png_info img_info = [](png_structp png_ptr, png_infop info_ptr) {
-    png_info info;
-
-    png_get_IHDR(png_ptr, info_ptr, &info.width, &info.height, &info.bit_depth, &info.color_type, &info.interlace_type,
-        nullptr, // compression_method
-        nullptr  // filter_method
-    );
-    
-    return info;
-  }(png_ptr, info_ptr);
-
-  RawImage image{img_info.width, img_info.height};
-  assert(image.width == 576);
-
-  //assert(color_type == PNG_COLOR_TYPE_RGB);
-  //assert(bit_depth == 8); // per channel
-
-  const size_t row_size = png_get_rowbytes(png_ptr, info_ptr);
-  image.row_size = row_size;
-
-  image.data.reserve(row_size * image.height);
-
-  png_bytepp row_pointers = png_get_rows(png_ptr, info_ptr);
-  for (size_t i = 0; i < image.height; ++i) {
-    std::copy(row_pointers[i], row_pointers[i] + row_size, std::back_inserter(image.data));
-  }
-
-  png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
-
-  return {std::move(image)};
-}
 
 
 
@@ -159,12 +66,15 @@ class HResult
 Graphics::Graphics(UINT w, UINT h, HWND hwnd)
 {
   int count = 0;
-  for (int i = 408; i < 576; i += 24)
+  for (int i = 0; i < 576; i += 24)
   {
+    using namespace std::chrono_literals;
     if (count >= 4) break; ++count;
-    AnimationFrame frame{ { i / 576.0f, 1.0f }, std::chrono::milliseconds{150} };
+    AnimationFrame frame{ { i / 576.0f, 1.0f }, 150ms };
     dino_animation_.frames.push_back(frame);
   }
+
+  dino_animation_.ResetFrame();
 
     const DXGI_SWAP_CHAIN_DESC swapDesc = CreateSwapChainDesc(w, h, hwnd);
 
@@ -300,7 +210,7 @@ void Graphics::LoadPNG()
 {
   // 576 x 24
   const fs::path doux = "D:\\cppprjs\\animation\\assets\\DinoSprites - doux.png";
-  const auto image = loadPngImage(doux);
+  const auto image = b8u::RawImage::Load(doux);
   if (image) {
     std::cout << "Image: " << image->width << "x" << image->height << ", row size: " << image->row_size << "\n";
     sprite_ = std::move(*image);
@@ -383,12 +293,13 @@ void Graphics::SetVertices()
    *   4: (-0.9f, -0.9f)   3: (0.9f, -0.9f)
    */
 
+    const float ratio = g_settings->ratio;
     const Vertex vertices[] =
       //     x ,    y ,          u ,   v
-      { { -0.9f,  0.9f,           0.0f, 0.0f } // 1  
-      , {  0.9f,  0.9f, 24.0f / 576.0f, 0.0f } // 2
-      , {  0.9f, -0.9f, 24.0f / 576.0f, 1.0f } // 3
-      , { -0.9f, -0.9f,           0.0f, 1.0f } // 4
+      { { -0.9f * ratio,  0.9f,           0.0f, 0.0f } // 1  
+      , {  0.9f * ratio,  0.9f, 24.0f / 576.0f, 0.0f } // 2
+      , {  0.9f * ratio, -0.9f, 24.0f / 576.0f, 1.0f } // 3
+      , { -0.9f * ratio, -0.9f,           0.0f, 1.0f } // 4
       };
 
     const unsigned short indices[] =
@@ -479,7 +390,7 @@ void Graphics::DrawAllThisShit()
 
 
   // TODO: handle animation
-  auto tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+  std::chrono::milliseconds tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
   //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
   if (dino_animation_.Tick(tmp))
   {
@@ -510,8 +421,8 @@ void Graphics::DrawAllThisShit()
   // configure viewport
   {
     D3D11_VIEWPORT vp;
-    vp.Width    = 480;
-    vp.Height   = 480;
+    vp.Width    = g_settings->width();
+    vp.Height   = g_settings->height();
     vp.MinDepth = 0;
     vp.MaxDepth = 1;
     vp.TopLeftX = 0;
