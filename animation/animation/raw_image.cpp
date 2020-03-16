@@ -94,7 +94,6 @@ std::optional<RawImage> RawImage::LoadPng(const fs::path& png_path)
   }(png_ptr, info_ptr);
 
   RawImage image{img_info.width, img_info.height};
-  assert(image.width == 576);
 
   //assert(color_type == PNG_COLOR_TYPE_RGB);
   //assert(bit_depth == 8); // per channel

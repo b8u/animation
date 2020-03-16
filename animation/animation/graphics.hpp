@@ -1,68 +1,59 @@
 #pragma once
 
 #include <libcommon/minimal_win.hpp>
+
 #include <animation/raw_image.hpp>
+#include <animation/uv.hpp>
+#include <animation/sprite_animation.hpp>
+
 #include <d3d11.h>
 #include <wrl/client.h>
 
 #include <array>
 #include <vector>
 #include <chrono>
-#include <cassert>
 
-struct UV
+struct Point
 {
-  float u;
-  float v;
+  float x = 0.0f;
+  float y = 0.0f;
 };
-
-struct UVAligned
-{
-    UV uv;
-    float padding[2] = {};
-};
-
-struct AnimationFrame
-{
-  UV uv;
-  std::chrono::milliseconds dt;
-};
-
-struct Animation
-{
-  std::vector<AnimationFrame> frames;
-
-  size_t frame_index;
-  std::chrono::milliseconds deadline;
-
-  bool Tick(std::chrono::milliseconds elapsed);
-
-  const AnimationFrame& frame() const noexcept { return frames[frame_index]; }
-
-  void ShiftFrame()
-  {
-    frame_index = (frame_index + 1) % frames.size();
-    deadline = frames[frame_index].dt; 
-  }
-
-  void ResetFrame()
-  {
-    assert(!frames.empty());
-    frame_index = frames.size() - 1;
-    ShiftFrame();
-  }
-};
-
 
 struct Vertex
 {
-  float x;
-  float y;
-  float u;
-  float v;
+  float x = 0.0f;
+  float y = 0.0f;
+  float u = 0.0f;
+  float v = 0.0f;
 };
 
+enum dino : size_t
+{
+  idle   = 0,
+  move   = 1,
+  kick   = 2,
+  hurt   = 3,
+  crouch = 4,
+  sneak  = 5,
+  total,
+};
 
+std::array<Animation, dino::total> BuildAnimations();
+
+struct DrawableObject
+{
+  Microsoft::WRL::ComPtr<ID3D11Buffer> vertices;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> indices;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> cbuffer;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture_view;
+  Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
+
+  int layer_number = 0;
+  unsigned draw_list_size = 0;
+
+  void Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) const;
+};
 
 class Graphics
 {
@@ -72,7 +63,12 @@ class Graphics
     Graphics(Graphics&&) = delete;
 
     void LoadShaders();
-    void LoadPNG();
+
+    static
+    std::pair<Microsoft::WRL::ComPtr<ID3D11Texture2D>,
+              Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>>
+    LoadPNG(const std::filesystem::path& path, const Microsoft::WRL::ComPtr<ID3D11Device>& device);
+
     void SetVertices();
 
     void DrawAllThisShit();
@@ -90,20 +86,16 @@ class Graphics
     static DXGI_SWAP_CHAIN_DESC CreateSwapChainDesc(UINT w, UINT h, HWND hwnd) noexcept;
 
   private:
-    Animation dino_animation_;
+    std::array<Animation, dino::total> animations_ = BuildAnimations();
     std::chrono::steady_clock::time_point last_frame_ = std::chrono::steady_clock::now();
 
   private:
     //win32::DxgiInfoManager info_manager_;
 
-    b8u::RawImage sprite_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture_view_;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> buffer_;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> uv_buffer_;
-    size_t draw_size_ = 0;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> index_buffer_;
+    Point dino_position_;
 
+    DrawableObject dino_;
+    DrawableObject sky_;
 
     Microsoft::WRL::ComPtr<ID3D11InputLayout> input_layout_;
 
@@ -118,5 +110,5 @@ class Graphics
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3DBlob> vertex_shader_blob_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
+//    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
 };

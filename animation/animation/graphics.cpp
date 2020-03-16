@@ -1,43 +1,17 @@
 #include "graphics.hpp"
 #include "settings.hpp"
-#include "raw_image.hpp"
-
-
-#include <sstream>
-#include <memory>
-#include <cassert>
-#include <optional>
-#include <filesystem>
-#include <iostream>
 
 #include <d3dcompiler.h>
 
-
-bool Animation::Tick(std::chrono::milliseconds elapsed)
-{
-  //std::cout << "Tick: " << elapsed.count() << ", deadline: " << deadline.count() << std::endl;
-
-  if (deadline > elapsed) {
-    deadline -= elapsed;
-    return false;
-  } 
-
-  elapsed -= deadline;
-
-  ShiftFrame();
-  Tick(elapsed);
-  return true;
-}
-
+#include <sstream>
+#include <memory>
+#include <optional>
+#include <filesystem>
+#include <iostream>
+#include <cassert>
 
 namespace fs = std::filesystem;
-
-
-
-
-
 namespace MS = Microsoft;
-
 
 class HResult
 {
@@ -63,18 +37,46 @@ class HResult
     HRESULT value_{};
 };
 
-Graphics::Graphics(UINT w, UINT h, HWND hwnd)
+
+void DrawableObject::Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) const
 {
+  const UINT stride = sizeof Vertex;
+  const UINT offset = 0u;
+  context->IASetVertexBuffers(0u, 1u, vertices.GetAddressOf(), &stride, &offset);
+  context->IASetIndexBuffer(indices.Get(), DXGI_FORMAT_R16_UINT, 0u);
+  context->VSSetConstantBuffers(0u, 1u, cbuffer.GetAddressOf());
+  context->PSSetShaderResources(0u, 1u, texture_view.GetAddressOf());
+  context->PSSetSamplers(0u, 1u, sampler.GetAddressOf());
+
+  context->DrawIndexed(draw_list_size , 0u, 0u);
+}
+
+std::array<Animation, dino::total> BuildAnimations()
+{
+  using namespace std::chrono_literals;
+
+  std::array<Animation, dino::total> res;
+
+  size_t index = 0;
   int count = 0;
-  for (int i = 0; i < 576; i += 24)
-  {
-    using namespace std::chrono_literals;
-    if (count >= 4) break; ++count;
+  for (int i = 0; i < 576; i += 24) {
+    if (count >= 4) {
+      ++index;
+      count = 0;
+      assert(index < static_cast<size_t>(dino::total));
+    }
+    ++count;
+
     AnimationFrame frame{ { i / 576.0f, 1.0f }, 150ms };
-    dino_animation_.frames.push_back(frame);
+    res[index].frames.push_back(frame);
+    res[index].ResetFrame();
   }
 
-  dino_animation_.ResetFrame();
+  return res;
+}
+
+Graphics::Graphics(UINT w, UINT h, HWND hwnd)
+{
 
     const DXGI_SWAP_CHAIN_DESC swapDesc = CreateSwapChainDesc(w, h, hwnd);
 
@@ -168,11 +170,41 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
                                  target_view_.GetAddressOf(),  //
                                  depth_stencil_view_.Get());   // ID3D11DepthStencilView * pDepthStencilView
 
-    LoadPNG();
+    {
+      auto [texture, texture_view] = LoadPNG("D:\\cppprjs\\animation\\assets\\DinoSprites - vita.png", device_);
+      dino_.texture      = texture      ;
+      dino_.texture_view = texture_view ;
+    }
+    {
+      auto [texture, texture_view] = LoadPNG("D:\\cppprjs\\animation\\assets\\Sprites\\Background\\sky.png", device_);
+      sky_.texture      = texture      ;
+      sky_.texture_view = texture_view ;
+    }
+
+    //Creating Sampler
+    {
+      D3D11_SAMPLER_DESC desc = {};
+      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
+      desc.AddressU       = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressV       = D3D11_TEXTURE_ADDRESS_WRAP;
+      desc.AddressW       = D3D11_TEXTURE_ADDRESS_WRAP;
+
+      auto result = device_->CreateSamplerState(&desc, &dino_.sampler);
+      //check that sampler state created correctly.
+      assert(SUCCEEDED(result) && "problem creating sampler\n");
+
+      sky_.sampler = dino_.sampler;
+    }
+
     LoadShaders();
     SetVertices();
 
 
+    // we are going to use this shit for all objects.
+    context_->IASetInputLayout(input_layout_.Get());
+    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context_->VSSetShader(vertex_shader_.Get(), nullptr, 0u);
+    context_->PSSetShader(pixel_shader_.Get(), nullptr, 0u);
 }
 
 void Graphics::LoadShaders()
@@ -206,73 +238,57 @@ void Graphics::LoadShaders()
 
 }
 
-void Graphics::LoadPNG()
+std::pair<Microsoft::WRL::ComPtr<ID3D11Texture2D>,
+          Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>>
+Graphics::LoadPNG(const fs::path& path, const Microsoft::WRL::ComPtr<ID3D11Device>& device)
 {
-  // 576 x 24
-  const fs::path doux = "D:\\cppprjs\\animation\\assets\\DinoSprites - doux.png";
-  const auto image = b8u::RawImage::Load(doux);
+  const auto image = b8u::RawImage::Load(path);
   if (image) {
     std::cout << "Image: " << image->width << "x" << image->height << ", row size: " << image->row_size << "\n";
-    sprite_ = std::move(*image);
-  }
-  else {
+  } else {
     std::cerr << "loadPngImage failed\n";
-    return;
+    return {};
   }
 
+  //Creating shader resource view
+  D3D11_TEXTURE2D_DESC desc;
+  ZeroMemory(&desc, sizeof(desc));
+  desc.Width              = image->width; // in texels
+  desc.Height             = image->height;
+  desc.MipLevels          = 1;
+  desc.ArraySize          = 1;
+  desc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
+  desc.SampleDesc.Count   = 1;
+  desc.SampleDesc.Quality = 0;
+  desc.Usage              = D3D11_USAGE_DEFAULT;
+  desc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
+  desc.CPUAccessFlags     = 0;
+  desc.MiscFlags = 0;
 
-  {
-    //Creating shader resource view
-    {
-      D3D11_TEXTURE2D_DESC desc;
-      ZeroMemory(&desc, sizeof(desc));
-      desc.Width              = image->width; // in texels
-      desc.Height             = image->height;
-      desc.MipLevels          = 1;
-      desc.ArraySize          = 1;
-      desc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
-      desc.SampleDesc.Count   = 1;
-      desc.SampleDesc.Quality = 0;
-      desc.Usage              = D3D11_USAGE_DEFAULT;
-      desc.BindFlags          = D3D11_BIND_SHADER_RESOURCE;
-      desc.CPUAccessFlags     = 0;
-      desc.MiscFlags = 0;
+  D3D11_SUBRESOURCE_DATA subResource;
+  subResource.pSysMem = image->data.data();
+  subResource.SysMemPitch = desc.Width * 4;
+  subResource.SysMemSlicePitch = 0;
 
-      D3D11_SUBRESOURCE_DATA subResource;
-      subResource.pSysMem = image->data.data();
-      subResource.SysMemPitch = desc.Width * 4;
-      subResource.SysMemSlicePitch = 0;
-      auto result = device_->CreateTexture2D(&desc, &subResource, &texture_);
-      //check to make sure that texture is created correctly
-      assert(SUCCEEDED(result) && "issue creating texture\n");
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+  auto result = device->CreateTexture2D(&desc, &subResource, &texture);
+  //check to make sure that texture is created correctly
+  assert(SUCCEEDED(result) && "issue creating texture\n");
 
 
-      // Create texture view
-      D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-      srvDesc.Format                    = desc.Format;
-      srvDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
-      srvDesc.Texture2D.MipLevels       = desc.MipLevels;
-      srvDesc.Texture2D.MostDetailedMip = 0;
-      result = device_->CreateShaderResourceView(texture_.Get(), &srvDesc, &texture_view_);
-      //check to make sure that resource view is created correctly
-      assert(SUCCEEDED(result) && "issue creating shaderResourceView \n");
+  // Create texture view
+  D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+  srvDesc.Format                    = desc.Format;
+  srvDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
+  srvDesc.Texture2D.MipLevels       = desc.MipLevels;
+  srvDesc.Texture2D.MostDetailedMip = 0;
 
-    }
-    //Creating Sampler
-    {
-      D3D11_SAMPLER_DESC desc = {};
-      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
-      desc.AddressU       = D3D11_TEXTURE_ADDRESS_WRAP;
-      desc.AddressV       = D3D11_TEXTURE_ADDRESS_WRAP;
-      desc.AddressW       = D3D11_TEXTURE_ADDRESS_WRAP;
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> texture_view;
+  result = device->CreateShaderResourceView(texture.Get(), &srvDesc, &texture_view);
+  //check to make sure that resource view is created correctly
+  assert(SUCCEEDED(result) && "issue creating shaderResourceView \n");
 
-      auto result = device_->CreateSamplerState(&desc, &sampler_);
-      //check that sampler state created correctly.
-      assert(SUCCEEDED(result) && "problem creating sampler\n");
-    }
-    //return true;
-  }
-
+  return { texture, texture_view };
 }
 
 void Graphics::SetVertices()
@@ -293,23 +309,18 @@ void Graphics::SetVertices()
    *   4: (-0.9f, -0.9f)   3: (0.9f, -0.9f)
    */
 
+
+  // vertices
+  {
     const float ratio = g_settings->ratio;
     const Vertex vertices[] =
-      //     x ,    y ,          u ,   v
-      { { -0.9f * ratio,  0.9f,           0.0f, 0.0f } // 1  
-      , {  0.9f * ratio,  0.9f, 24.0f / 576.0f, 0.0f } // 2
-      , {  0.9f * ratio, -0.9f, 24.0f / 576.0f, 1.0f } // 3
-      , { -0.9f * ratio, -0.9f,           0.0f, 1.0f } // 4
-      };
+      //     x ,             y ,             u ,   v
+    { { -0.12f ,  0.12f / ratio,           0.0f, 0.0f } // 1  
+    , {  0.12f ,  0.12f / ratio, 24.0f / 576.0f, 0.0f } // 2
+    , {  0.12f , -0.12f / ratio, 24.0f / 576.0f, 1.0f } // 3
+    , { -0.12f , -0.12f / ratio,           0.0f, 1.0f } // 4
+    };
 
-    const unsigned short indices[] =
-      { 0, 1, 2
-      , 0, 2, 3
-      };
-
-    draw_size_ = std::size(indices);
-
-    // vertices
     D3D11_BUFFER_DESC bd = {};
     bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
     bd.Usage               = D3D11_USAGE_DEFAULT;
@@ -321,12 +332,47 @@ void Graphics::SetVertices()
     D3D11_SUBRESOURCE_DATA sd = {};
     sd.pSysMem = vertices;
 
-    device_->CreateBuffer(&bd, &sd, &buffer_);
+    device_->CreateBuffer(&bd, &sd, &dino_.vertices);
+  }
 
-    // indices
+  // sky buffer
+  {
+    const Vertex sky_vertices[] =
+    { { -1.0f,  1.0f, 0.0f, 0.0f } // 1
+    , {  1.0f,  1.0f, 1.0f, 0.0f } // 2
+    , {  1.0f, -1.0f, 1.0f, 1.0f } // 3
+    , { -1.0f, -1.0f, 0.0f, 1.0f } // 3
+    };
+
+    D3D11_BUFFER_DESC bd = {};
+    bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
+    bd.Usage               = D3D11_USAGE_DEFAULT;
+    bd.CPUAccessFlags      = 0u;
+    bd.MiscFlags           = 0u;
+    bd.ByteWidth           = sizeof sky_vertices;
+    bd.StructureByteStride = sizeof Vertex;
+
+    D3D11_SUBRESOURCE_DATA sd = {};
+    sd.pSysMem = sky_vertices;
+
+    device_->CreateBuffer(&bd, &sd, &sky_.vertices);
+
+  }
+
+
+  // indices
+  {
+    const unsigned short indices[] =
+    { 0, 1, 2
+    , 0, 2, 3
+    };
+
+    dino_.draw_list_size = std::size(indices);
+    sky_.draw_list_size = std::size(indices);
+
     D3D11_BUFFER_DESC ibd = {};
     ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER;
-    ibd.Usage               = D3D11_USAGE_DEFAULT;
+    ibd.Usage               = D3D11_USAGE_IMMUTABLE;
     ibd.CPUAccessFlags      = 0u;
     ibd.MiscFlags           = 0u;
     ibd.ByteWidth           = sizeof(indices);
@@ -335,88 +381,86 @@ void Graphics::SetVertices()
     D3D11_SUBRESOURCE_DATA isd = {};
     isd.pSysMem = indices;
 
-    device_->CreateBuffer(&ibd, &isd, &index_buffer_);
+    device_->CreateBuffer(&ibd, &isd, &dino_.indices);
 
-    // uv animation
+    sky_.indices = dino_.indices;
+  }
+
+  // uv animation
+  {
+    Vertex default_offset{};
+
+    D3D11_BUFFER_DESC uv_desc = {};
+    uv_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    uv_desc.Usage = D3D11_USAGE_DYNAMIC;
+    uv_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    uv_desc.ByteWidth = sizeof default_offset;
+    uv_desc.StructureByteStride = sizeof Vertex;
+
+    D3D11_SUBRESOURCE_DATA uv_sd = {};
+    uv_sd.pSysMem = &default_offset;
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &dino_.cbuffer); !res)
     {
-      UVAligned default_offset{};
-
-      D3D11_BUFFER_DESC uv_desc = {};
-      uv_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-      uv_desc.Usage = D3D11_USAGE_DYNAMIC;
-      uv_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-      uv_desc.ByteWidth = sizeof default_offset;
-      uv_desc.StructureByteStride = sizeof UVAligned;
-
-      D3D11_SUBRESOURCE_DATA uv_sd = {};
-      uv_sd.pSysMem = &default_offset;
-
-      if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &uv_buffer_); !res)
-      {
-        std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-        std::terminate();
-      }
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
     }
 
-    // layout
-    const D3D11_INPUT_ELEMENT_DESC ied[] =
-      { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-      , { "TexCoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
-      };
-    
-    if (HResult res = device_->CreateInputLayout(
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &sky_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+  }
+
+  // layout
+  const D3D11_INPUT_ELEMENT_DESC ied[] =
+  { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+  , { "TexCoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+  };
+
+  if (HResult res = device_->CreateInputLayout(
         ied,
         (UINT)std::size(ied),
         vertex_shader_blob_->GetBufferPointer(),
         vertex_shader_blob_->GetBufferSize(),
         &input_layout_); !res) {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
+    std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+    std::terminate();
+  }
 }
 
 void Graphics::DrawAllThisShit()
 {
-  assert(buffer_ && "vertex buffer is empty");
-
-
   auto dt = std::chrono::steady_clock::now() - last_frame_;
   last_frame_ = std::chrono::steady_clock::now();
 
-
-  // TODO: do it in draw call
-  const UINT stride = sizeof(Vertex);
-  const UINT offset = 0u;
-
-
-  // TODO: handle animation
   std::chrono::milliseconds tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
   //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
-  if (dino_animation_.Tick(tmp))
+  if (animations_[1].Tick(tmp))
   {
     D3D11_MAPPED_SUBRESOURCE mapped;
-    if (HResult res = context_->Map(uv_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); !res)
+    if (HResult res = context_->Map(dino_.cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); !res)
     {
       std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
       std::terminate();
     }
 
-    static UVAligned newUV{ {0.0f, 0.0f} };
-    newUV.uv = dino_animation_.frame().uv;
+    Vertex newUV{};
+
+    newUV.u = animations_[1].frame().uv.u;
+    newUV.v = animations_[1].frame().uv.v;
+
+    if (g_settings->left ) { dino_position_.x -= 0.03f; }
+    if (g_settings->right) { dino_position_.x += 0.03f; }
+
+    newUV.x = dino_position_.x;
+    newUV.y = dino_position_.y;
     memcpy(mapped.pData, &newUV, sizeof newUV);
 
-    context_->Unmap(uv_buffer_.Get(), 0);
+    context_->Unmap(dino_.cbuffer.Get(), 0);
   }
 
-  context_->IASetVertexBuffers(0u, 1u, buffer_.GetAddressOf(), &stride, &offset);
-  context_->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0u);
-  context_->IASetInputLayout(input_layout_.Get());
-  context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  context_->VSSetShader(vertex_shader_.Get(), nullptr, 0u);
-  context_->VSSetConstantBuffers(0u, 1u, uv_buffer_.GetAddressOf());
-  context_->PSSetShader(pixel_shader_.Get(), nullptr, 0u);
-  context_->PSSetShaderResources(0u, 1u, texture_view_.GetAddressOf());
-  context_->PSSetSamplers(0u, 1u, sampler_.GetAddressOf());
 
   // configure viewport
   {
@@ -427,10 +471,12 @@ void Graphics::DrawAllThisShit()
     vp.MaxDepth = 1;
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
-    context_->RSSetViewports( 1u,&vp );
+    context_->RSSetViewports(1u, &vp);
   }
 
-  context_->DrawIndexed((UINT)draw_size_, 0u, 0u);
+  dino_.Draw(context_);
+  sky_.Draw(context_);
+
 }
 
 void Graphics::EndFrame()
