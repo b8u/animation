@@ -5,11 +5,40 @@
 
 struct Settings
 {
-  constexpr uint16_t width()  const { return 16 * scale; } // 800
-  constexpr uint16_t height() const { return 9 * scale; }  // 450
+  constexpr uint16_t width()  const { return 688; }
+  constexpr uint16_t height() const { return 432; }
 
-  static constexpr const uint16_t scale = 50;
-  static constexpr const float ratio = 9.0f / 16.0f;
+  static constexpr const float ratio = 432.0f / 688.0f;
+
+  constexpr float pxToX(uint16_t px)
+  {
+    const float halfWidth = width() / 2;
+    if (px == halfWidth) { 
+      return 0.0f;
+    } else {
+      const float relative = px / halfWidth;
+      if (px < halfWidth) {
+        return -(1.0f - relative);
+      } else {
+        return relative - 1.0f;
+      }
+    }
+  }
+
+  constexpr float pxToY(uint16_t px)
+  {
+    const float halfHeight = height() / 2;
+    if (px == halfHeight) { 
+      return 0.0f;
+    } else {
+      const float relative = px / halfHeight;
+      if (px < halfHeight) {
+        return 1.0f - relative;
+      } else {
+        return -(relative - 1.0f);
+      }
+    }
+  }
 
   bool left = false;
   bool right = false;

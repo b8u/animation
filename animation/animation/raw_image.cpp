@@ -90,13 +90,14 @@ std::optional<RawImage> RawImage::LoadPng(const fs::path& png_path)
         nullptr  // filter_method
     );
     
+    assert(info.color_type == PNG_COLOR_TYPE_RGBA);
+    assert(info.bit_depth == 8); // per channel
+
     return info;
   }(png_ptr, info_ptr);
 
   RawImage image{img_info.width, img_info.height};
 
-  //assert(color_type == PNG_COLOR_TYPE_RGB);
-  //assert(bit_depth == 8); // per channel
 
   const size_t row_size = png_get_rowbytes(png_ptr, info_ptr);
   image.row_size = row_size;

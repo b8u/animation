@@ -164,22 +164,17 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
         //throw Exception(res, __LINE__, __FILE__);
     }
 
-
     // bind depth stensil view to OM (but we don't have it yet).
-    context_->OMSetRenderTargets(1u,                           // UINT NumViews
-                                 target_view_.GetAddressOf(),  //
-                                 depth_stencil_view_.Get());   // ID3D11DepthStencilView * pDepthStencilView
+    context_->OMSetRenderTargets(/* UINT NumViews */ 1u, target_view_.GetAddressOf(), depth_stencil_view_.Get());
 
-    {
-      auto [texture, texture_view] = LoadPNG("D:\\cppprjs\\animation\\assets\\DinoSprites - vita.png", device_);
-      dino_.texture      = texture      ;
-      dino_.texture_view = texture_view ;
-    }
-    {
-      auto [texture, texture_view] = LoadPNG("D:\\cppprjs\\animation\\assets\\Sprites\\Background\\sky.png", device_);
-      sky_.texture      = texture      ;
-      sky_.texture_view = texture_view ;
-    }
+    std::tie(       dino_.texture,        dino_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\DinoSprites - vita.png)"           , device_);
+    std::tie(        sky_.texture,         sky_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\sky.png)"       , device_);
+    std::tie(     clouds_.texture,      clouds_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\cloud.png)"     , device_);
+    std::tie(  mountains_.texture,   mountains_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\mountain2.png)" , device_);
+    std::tie( trees_back_.texture,  trees_back_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine2.png)"     , device_);
+    std::tie(trees_front_.texture, trees_front_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine1.png)"     , device_);
+    //std::tie(     ground_.texture,      ground_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_11.png)", device_);
+
 
     //Creating Sampler
     {
@@ -193,12 +188,11 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
       //check that sampler state created correctly.
       assert(SUCCEEDED(result) && "problem creating sampler\n");
 
-      sky_.sampler = dino_.sampler;
+      clouds_.sampler = mountains_.sampler = trees_front_.sampler = trees_back_.sampler = sky_.sampler = dino_.sampler;
     }
 
     LoadShaders();
     SetVertices();
-
 
     // we are going to use this shit for all objects.
     context_->IASetInputLayout(input_layout_.Get());
@@ -310,55 +304,60 @@ void Graphics::SetVertices()
    */
 
 
+    auto createVertexBuffer = [](Microsoft::WRL::ComPtr<ID3D11Device>& device, const Box& tile) {
+      const Vertex vertices[] =
+      { { tile.left_top.x    ,  tile.left_top.y    , tile.left_top.u    ,  tile.left_top.v     } // 1
+      , { tile.right_bottom.x,  tile.left_top.y    , tile.right_bottom.u,  tile.left_top.v     } // 2
+      , { tile.right_bottom.x,  tile.right_bottom.y, tile.right_bottom.u,  tile.right_bottom.v } // 3
+      , { tile.left_top.x    ,  tile.right_bottom.y, tile.left_top.u    ,  tile.right_bottom.v } // 3
+      };
+
+      D3D11_BUFFER_DESC bd = {};
+      bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
+      bd.Usage               = D3D11_USAGE_DEFAULT;
+      bd.CPUAccessFlags      = 0u;
+      bd.MiscFlags           = 0u;
+      bd.ByteWidth           = sizeof vertices;
+      bd.StructureByteStride = sizeof Vertex;
+
+      D3D11_SUBRESOURCE_DATA sd = {};
+      sd.pSysMem = vertices;
+      Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
+      device->CreateBuffer(&bd, &sd, &buffer);
+
+      return buffer;
+    };
+
   // vertices
-  {
-    const float ratio = g_settings->ratio;
-    const Vertex vertices[] =
-      //     x ,             y ,             u ,   v
-    { { -0.12f ,  0.12f / ratio,           0.0f, 0.0f } // 1  
-    , {  0.12f ,  0.12f / ratio, 24.0f / 576.0f, 0.0f } // 2
-    , {  0.12f , -0.12f / ratio, 24.0f / 576.0f, 1.0f } // 3
-    , { -0.12f , -0.12f / ratio,           0.0f, 1.0f } // 4
-    };
+  dino_.vertices = createVertexBuffer(device_,
+      { { g_settings->pxToX(         40), g_settings->pxToY(391 - 24 * 2),           0.0f, 0.0f }
+      , { g_settings->pxToX(40 + 24 * 2), g_settings->pxToY(         391), 24.0f / 576.0f, 1.0f }
+      });
 
-    D3D11_BUFFER_DESC bd = {};
-    bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
-    bd.Usage               = D3D11_USAGE_DEFAULT;
-    bd.CPUAccessFlags      = 0u;
-    bd.MiscFlags           = 0u;
-    bd.ByteWidth           = sizeof( vertices );
-    bd.StructureByteStride = sizeof( Vertex );
+  sky_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(  0), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(211), 1.0f, 1.0f } // 3
+    });
 
-    D3D11_SUBRESOURCE_DATA sd = {};
-    sd.pSysMem = vertices;
+  clouds_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(      27), g_settings->pxToY(      13), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(27 + 634), g_settings->pxToY(13 + 136), 1.0f, 1.0f } // 3
+    });
 
-    device_->CreateBuffer(&bd, &sd, &dino_.vertices);
-  }
+  mountains_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(132), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(259), 1.0f, 1.0f } // 3
+    });
 
-  // sky buffer
-  {
-    const Vertex sky_vertices[] =
-    { { -1.0f,  1.0f, 0.0f, 0.0f } // 1
-    , {  1.0f,  1.0f, 1.0f, 0.0f } // 2
-    , {  1.0f, -1.0f, 1.0f, 1.0f } // 3
-    , { -1.0f, -1.0f, 0.0f, 1.0f } // 3
-    };
+  trees_back_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(192 - 20), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(391 - 20), 1.0f, 1.0f } // 3
+    });
 
-    D3D11_BUFFER_DESC bd = {};
-    bd.BindFlags           = D3D11_BIND_VERTEX_BUFFER;
-    bd.Usage               = D3D11_USAGE_DEFAULT;
-    bd.CPUAccessFlags      = 0u;
-    bd.MiscFlags           = 0u;
-    bd.ByteWidth           = sizeof sky_vertices;
-    bd.StructureByteStride = sizeof Vertex;
-
-    D3D11_SUBRESOURCE_DATA sd = {};
-    sd.pSysMem = sky_vertices;
-
-    device_->CreateBuffer(&bd, &sd, &sky_.vertices);
-
-  }
-
+  trees_front_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(235), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(383), 1.0f, 1.0f } // 3
+    });
 
   // indices
   {
@@ -369,6 +368,10 @@ void Graphics::SetVertices()
 
     dino_.draw_list_size = std::size(indices);
     sky_.draw_list_size = std::size(indices);
+    mountains_.draw_list_size = std::size(indices);
+    trees_back_.draw_list_size = std::size(indices);
+    trees_front_.draw_list_size = std::size(indices);
+    clouds_.draw_list_size = std::size(indices);
 
     D3D11_BUFFER_DESC ibd = {};
     ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER;
@@ -383,7 +386,7 @@ void Graphics::SetVertices()
 
     device_->CreateBuffer(&ibd, &isd, &dino_.indices);
 
-    sky_.indices = dino_.indices;
+    clouds_.indices = mountains_.indices = trees_front_.indices = trees_back_.indices = sky_.indices = dino_.indices;
   }
 
   // uv animation
@@ -411,11 +414,35 @@ void Graphics::SetVertices()
       std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
       std::terminate();
     }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &mountains_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &trees_back_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &trees_front_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &clouds_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
   }
 
   // layout
   const D3D11_INPUT_ELEMENT_DESC ied[] =
-  { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
+  { { "Position", 0, DXGI_FORMAT_R32G32_FLOAT, 0,                 0, D3D11_INPUT_PER_VERTEX_DATA, 0 }
   , { "TexCoord", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(float) * 2, D3D11_INPUT_PER_VERTEX_DATA, 0 }
   };
 
@@ -475,6 +502,10 @@ void Graphics::DrawAllThisShit()
   }
 
   dino_.Draw(context_);
+  trees_front_.Draw(context_);
+  trees_back_.Draw(context_);
+  mountains_.Draw(context_);
+  clouds_.Draw(context_);
   sky_.Draw(context_);
 
 }

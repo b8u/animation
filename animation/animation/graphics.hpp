@@ -19,12 +19,20 @@ struct Point
   float y = 0.0f;
 };
 
+
 struct Vertex
 {
   float x = 0.0f;
   float y = 0.0f;
   float u = 0.0f;
   float v = 0.0f;
+};
+
+struct Box
+{
+  Vertex left_top;
+  Vertex right_bottom;
+
 };
 
 enum dino : size_t
@@ -96,6 +104,10 @@ class Graphics
 
     DrawableObject dino_;
     DrawableObject sky_;
+    DrawableObject clouds_;
+    DrawableObject trees_back_;
+    DrawableObject trees_front_;
+    DrawableObject mountains_;
 
     Microsoft::WRL::ComPtr<ID3D11InputLayout> input_layout_;
 
@@ -110,5 +122,4 @@ class Graphics
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3DBlob> vertex_shader_blob_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
-//    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
 };
