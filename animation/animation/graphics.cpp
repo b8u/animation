@@ -173,10 +173,11 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
     std::tie(  mountains_.texture,   mountains_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\mountain2.png)" , device_);
     std::tie( trees_back_.texture,  trees_back_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine2.png)"     , device_);
     std::tie(trees_front_.texture, trees_front_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine1.png)"     , device_);
-    //std::tie(     ground_.texture,      ground_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_11.png)", device_);
+    std::tie(     ground_.texture,      ground_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_11.png)", device_);
+    std::tie(      grass_.texture,       grass_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_2.png)" , device_);
 
 
-    //Creating Sampler
+    // Creating normal sampler
     {
       D3D11_SAMPLER_DESC desc = {};
       desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -188,7 +189,7 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
       //check that sampler state created correctly.
       assert(SUCCEEDED(result) && "problem creating sampler\n");
 
-      clouds_.sampler = mountains_.sampler = trees_front_.sampler = trees_back_.sampler = sky_.sampler = dino_.sampler;
+      grass_.sampler = ground_.sampler = clouds_.sampler = mountains_.sampler = trees_front_.sampler = trees_back_.sampler = sky_.sampler = dino_.sampler;
     }
 
     LoadShaders();
@@ -359,6 +360,18 @@ void Graphics::SetVertices()
     , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(383), 1.0f, 1.0f } // 3
     });
 
+  ground_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(383)                 , 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(g_settings->height()), float(g_settings->width()) / 16.0f, float(g_settings->height() - 383) / 16.0f } // 3
+    });
+
+  grass_.vertices = createVertexBuffer(device_,
+    { { g_settings->pxToX(                  0), g_settings->pxToY(     383),                               0.0f, 0.0f } // 1
+    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(383 + 16), float(g_settings->width()) / 16.0f, 1.0f } // 3
+    });
+
+
+
   // indices
   {
     const unsigned short indices[] =
@@ -372,6 +385,8 @@ void Graphics::SetVertices()
     trees_back_.draw_list_size = std::size(indices);
     trees_front_.draw_list_size = std::size(indices);
     clouds_.draw_list_size = std::size(indices);
+    ground_.draw_list_size = std::size(indices);
+    grass_.draw_list_size = std::size(indices);
 
     D3D11_BUFFER_DESC ibd = {};
     ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER;
@@ -385,8 +400,8 @@ void Graphics::SetVertices()
     isd.pSysMem = indices;
 
     device_->CreateBuffer(&ibd, &isd, &dino_.indices);
-
-    clouds_.indices = mountains_.indices = trees_front_.indices = trees_back_.indices = sky_.indices = dino_.indices;
+ 
+    grass_.indices = ground_.indices = clouds_.indices = mountains_.indices = trees_front_.indices = trees_back_.indices = sky_.indices = dino_.indices;
   }
 
   // uv animation
@@ -434,6 +449,18 @@ void Graphics::SetVertices()
     }
 
     if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &clouds_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &ground_.cbuffer); !res)
+    {
+      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
+      std::terminate();
+    }
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &grass_.cbuffer); !res)
     {
       std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
       std::terminate();
@@ -502,6 +529,8 @@ void Graphics::DrawAllThisShit()
   }
 
   dino_.Draw(context_);
+  grass_.Draw(context_);
+  ground_.Draw(context_);
   trees_front_.Draw(context_);
   trees_back_.Draw(context_);
   mountains_.Draw(context_);

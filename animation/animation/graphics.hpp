@@ -108,6 +108,8 @@ class Graphics
     DrawableObject trees_back_;
     DrawableObject trees_front_;
     DrawableObject mountains_;
+    DrawableObject ground_;
+    DrawableObject grass_;
 
     Microsoft::WRL::ComPtr<ID3D11InputLayout> input_layout_;
 
