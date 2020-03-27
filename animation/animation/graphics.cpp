@@ -13,29 +13,6 @@
 namespace fs = std::filesystem;
 namespace MS = Microsoft;
 
-class HResult
-{
-  public:
-    constexpr HResult() noexcept = default;
-    constexpr HResult(const HResult&) = default;
-
-    constexpr HResult(HRESULT value) noexcept : value_(value) {}
-    constexpr HRESULT value() const noexcept { return value_; }
-
-    inline constexpr operator bool() const noexcept { return SUCCEEDED(value()); }
-    inline constexpr explicit operator HRESULT() const noexcept { return value(); }
-
-    inline HResult& operator=(HRESULT value) noexcept
-    {
-      value_ = value;
-      return *this;
-    }
-
-    inline bool operator==(HRESULT value) const noexcept { return value == value_; }
-
-  private:
-    HRESULT value_{};
-};
 
 
 void DrawableObject::Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& context) const
@@ -45,7 +22,7 @@ void DrawableObject::Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& con
   context->IASetVertexBuffers(0u, 1u, vertices.GetAddressOf(), &stride, &offset);
   context->IASetIndexBuffer(indices.Get(), DXGI_FORMAT_R16_UINT, 0u);
   context->VSSetConstantBuffers(0u, 1u, cbuffer.GetAddressOf());
-  context->PSSetShaderResources(0u, 1u, texture_view.GetAddressOf());
+  context->PSSetShaderResources(0u, 1u, texture.texture_view().GetAddressOf());
   context->PSSetSamplers(0u, 1u, sampler.GetAddressOf());
 
   context->DrawIndexed(draw_list_size , 0u, 0u);
@@ -167,14 +144,18 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
     // bind depth stensil view to OM (but we don't have it yet).
     context_->OMSetRenderTargets(/* UINT NumViews */ 1u, target_view_.GetAddressOf(), depth_stencil_view_.Get());
 
-    std::tie(       dino_.texture,        dino_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\DinoSprites - vita.png)"           , device_);
-    std::tie(        sky_.texture,         sky_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\sky.png)"       , device_);
-    std::tie(     clouds_.texture,      clouds_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\cloud.png)"     , device_);
-    std::tie(  mountains_.texture,   mountains_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\mountain2.png)" , device_);
-    std::tie( trees_back_.texture,  trees_back_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine2.png)"     , device_);
-    std::tie(trees_front_.texture, trees_front_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Background\pine1.png)"     , device_);
-    std::tie(     ground_.texture,      ground_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_11.png)", device_);
-    std::tie(      grass_.texture,       grass_.texture_view) = LoadPNG(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_2.png)" , device_);
+
+  
+  
+
+    dino_.texture        = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\DinoSprites - vita.png)"           ) , device_};
+    sky_.texture         = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Background\sky.png)"       ) , device_};
+    clouds_.texture      = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Background\cloud.png)"     ) , device_};
+    mountains_.texture   = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Background\mountain2.png)" ) , device_};
+    trees_back_.texture  = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Background\pine2.png)"     ) , device_};
+    trees_front_.texture = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Background\pine1.png)"     ) , device_};
+    ground_.texture      = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_11.png)") , device_};
+    grass_.texture       = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_2.png)" ) , device_};
 
 
     // Creating normal sampler
