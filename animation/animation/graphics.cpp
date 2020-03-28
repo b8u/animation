@@ -44,7 +44,7 @@ std::array<Animation, dino::total> BuildAnimations()
     }
     ++count;
 
-    AnimationFrame frame{ { i / 576.0f, 1.0f }, 150ms };
+    AnimationFrame frame{ { i / 576.0f, 0.0f }, 150ms };
     res[index].frames.push_back(frame);
     res[index].ResetFrame();
   }
@@ -158,7 +158,7 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
     grass_.texture       = Texture2D{*b8u::RawImage::Load(R"(D:\cppprjs\animation\assets\Sprites\Tile\Ground\ground_2.png)" ) , device_};
 
 
-    // Creating normal sampler
+    // Creating repeat sampler
     {
       D3D11_SAMPLER_DESC desc = {};
       desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
@@ -166,11 +166,25 @@ Graphics::Graphics(UINT w, UINT h, HWND hwnd)
       desc.AddressV       = D3D11_TEXTURE_ADDRESS_WRAP;
       desc.AddressW       = D3D11_TEXTURE_ADDRESS_WRAP;
 
-      auto result = device_->CreateSamplerState(&desc, &dino_.sampler);
+      auto result = device_->CreateSamplerState(&desc, &repeat_sampler_);
       //check that sampler state created correctly.
       assert(SUCCEEDED(result) && "problem creating sampler\n");
 
-      grass_.sampler = ground_.sampler = clouds_.sampler = mountains_.sampler = trees_front_.sampler = trees_back_.sampler = sky_.sampler = dino_.sampler;
+      grass_.sampler = ground_.sampler = clouds_.sampler = mountains_.sampler = trees_front_.sampler = trees_back_.sampler = sky_.sampler = repeat_sampler_;
+    }
+
+    {
+      D3D11_SAMPLER_DESC desc = {};
+      desc.Filter         = D3D11_FILTER_MIN_MAG_MIP_POINT;
+      desc.AddressU       = D3D11_TEXTURE_ADDRESS_MIRROR;
+      desc.AddressV       = D3D11_TEXTURE_ADDRESS_MIRROR;
+      desc.AddressW       = D3D11_TEXTURE_ADDRESS_MIRROR;
+
+      auto result = device_->CreateSamplerState(&desc, &mirror_sampler_);
+      //check that sampler state created correctly.
+      assert(SUCCEEDED(result) && "problem creating sampler\n");
+
+      dino_.sampler = mirror_sampler_;
     }
 
     LoadShaders();
@@ -405,47 +419,20 @@ void Graphics::SetVertices()
       std::terminate();
     }
 
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &sky_.cbuffer); !res)
+   
+
+    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &static_offset_); !res)
     {
       std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
       std::terminate();
     }
 
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &mountains_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &trees_back_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &trees_front_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &clouds_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &ground_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &grass_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
+    mountains_.cbuffer   = static_offset_;
+    trees_back_.cbuffer  = static_offset_;
+    trees_front_.cbuffer = static_offset_;
+    clouds_.cbuffer      = static_offset_;
+    ground_.cbuffer      = static_offset_;
+    grass_.cbuffer       = static_offset_;
   }
 
   // layout
@@ -470,9 +457,13 @@ void Graphics::DrawAllThisShit()
   auto dt = std::chrono::steady_clock::now() - last_frame_;
   last_frame_ = std::chrono::steady_clock::now();
 
+
+  const size_t animation_stage = static_cast<size_t>(dino::move);
+  auto& animation = animations_[animation_stage];
+
   std::chrono::milliseconds tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
   //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
-  if (animations_[1].Tick(tmp))
+  if (animation.Tick(tmp))
   {
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (HResult res = context_->Map(dino_.cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); !res)
@@ -483,14 +474,30 @@ void Graphics::DrawAllThisShit()
 
     Vertex newUV{};
 
-    newUV.u = animations_[1].frame().uv.u;
-    newUV.v = animations_[1].frame().uv.v;
+    if (g_settings->left ) {
+      dino_position_.x -= 0.03f;
+      dino_.direction = CharacterObject::Direction::left;
+    } else if (g_settings->right) {
+      dino_position_.x += 0.03f;
+      dino_.direction = CharacterObject::Direction::right;
+    }
 
-    if (g_settings->left ) { dino_position_.x -= 0.03f; }
-    if (g_settings->right) { dino_position_.x += 0.03f; }
+    switch (dino_.direction)
+    {
+      case CharacterObject::Direction::left:
+        newUV.u = -2.0f - animation.frame().uv.u;
+        newUV.v = -2.0f - animation.frame().uv.v;
+        break;
+
+      case CharacterObject::Direction::right:
+        newUV.u = animation.frame().uv.u;
+        newUV.v = animation.frame().uv.v;
+        break;
+    }
 
     newUV.x = dino_position_.x;
     newUV.y = dino_position_.y;
+
     memcpy(mapped.pData, &newUV, sizeof newUV);
 
     context_->Unmap(dino_.cbuffer.Get(), 0);
