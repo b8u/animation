@@ -21,6 +21,8 @@ class Texture2D
     Texture2D(Microsoft::WRL::ComPtr<ID3D11Texture2D> texture, DevicePtr& device_);
     Texture2D(const b8u::RawImage& image, DevicePtr& device_);
 
+    void Bind(const ContextPtr& context) const;
+
     Texture2D& operator=(const Texture2D&) = default;
     Texture2D& operator=(Texture2D&&) = default;
 
