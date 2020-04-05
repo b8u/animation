@@ -21,6 +21,7 @@ LRESULT Window::HandleMsg(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) noe
     switch (wParam) {
       case VK_LEFT : if (g_settings) { g_settings->left  = true; } break;
       case VK_RIGHT: if (g_settings) { g_settings->right = true; } break;
+      case VK_SPACE: break;
       //case VK_UP   : break;
       //case VK_DOWN : break;
     }
