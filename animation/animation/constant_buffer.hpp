@@ -20,7 +20,7 @@ class ConstantBuffer
 
     void Bind(const ContextPtr& context) const
     {
-      context->PSSetConstantBuffers(0u, 1u, cbuffer_.GetAddressOf());
+      context->VSSetConstantBuffers(0u, 1u, cbuffer_.GetAddressOf());
     }
 
     void Update(const ContextPtr& context, const value_type& value)
