@@ -370,13 +370,13 @@ void Graphics::SetVertices()
   // indices
   {
     dino_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    grass_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    ground_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    clouds_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    mountains_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    trees_front_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    trees_back_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
-    sky_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    grass_       .indices = dino_.indices;
+    ground_      .indices = dino_.indices;
+    clouds_      .indices = dino_.indices;
+    mountains_   .indices = dino_.indices;
+    trees_front_ .indices = dino_.indices;
+    trees_back_  .indices = dino_.indices;
+    sky_         .indices = dino_.indices;
   }
 
   // uv animation
