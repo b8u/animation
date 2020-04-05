@@ -22,7 +22,7 @@ void DrawableObject::Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& con
   context->IASetVertexBuffers(0u, 1u, vertices.GetAddressOf(), &stride, &offset);
   indices.Bind(context);
   cbuffer.Bind(context);
-  context->PSSetShaderResources(0u, 1u, texture.texture_view().GetAddressOf());
+  texture.Bind(context);
   context->PSSetSamplers(0u, 1u, sampler.GetAddressOf());
 
   context->DrawIndexed(indices.size() , 0u, 0u);
@@ -417,6 +417,7 @@ void Graphics::DrawAllThisShit()
   auto& animation = animations_[animation_stage];
 
   std::chrono::milliseconds tmp = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+
   //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
   if (animation.Tick(tmp))
   {

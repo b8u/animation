@@ -51,3 +51,8 @@ Texture2D::Texture2D(const b8u::RawImage& image, DevicePtr& device_)
     throw "can't create a texture view";
   }
 }
+
+void Texture2D::Bind(const ContextPtr& context) const
+{
+  context->PSSetShaderResources(0u, 1u, texture_view().GetAddressOf());
+}

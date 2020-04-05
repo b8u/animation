@@ -1,7 +1,5 @@
 #pragma once
 
-#include <libcommon/minimal_win.hpp>
-
 #include <animation/raw_image.hpp>
 #include <animation/uv.hpp>
 #include <animation/sprite_animation.hpp>
