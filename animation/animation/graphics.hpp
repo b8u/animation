@@ -7,6 +7,8 @@
 #include <animation/sprite_animation.hpp>
 #include <animation/texture2d.hpp>
 #include <animation/hresult.hpp>
+#include <animation/index_buffer.hpp>
+#include <animation/constant_buffer.hpp>
 
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -56,13 +58,11 @@ using DevicePtr = Microsoft::WRL::ComPtr<ID3D11Device>;
 struct DrawableObject
 {
   Microsoft::WRL::ComPtr<ID3D11Buffer> vertices;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> indices;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> cbuffer;
+  IndexBuffer indices;
+  PerFrameConstantBuffer cbuffer;
   Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
 
   Texture2D texture;
-
-  unsigned draw_list_size = 0;
 
   void Draw(const ContextPtr& context) const;
 };

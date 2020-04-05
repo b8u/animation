@@ -20,12 +20,12 @@ void DrawableObject::Draw(const Microsoft::WRL::ComPtr<ID3D11DeviceContext>& con
   const UINT stride = sizeof Vertex;
   const UINT offset = 0u;
   context->IASetVertexBuffers(0u, 1u, vertices.GetAddressOf(), &stride, &offset);
-  context->IASetIndexBuffer(indices.Get(), DXGI_FORMAT_R16_UINT, 0u);
-  context->VSSetConstantBuffers(0u, 1u, cbuffer.GetAddressOf());
+  indices.Bind(context);
+  cbuffer.Bind(context);
   context->PSSetShaderResources(0u, 1u, texture.texture_view().GetAddressOf());
   context->PSSetSamplers(0u, 1u, sampler.GetAddressOf());
 
-  context->DrawIndexed(draw_list_size , 0u, 0u);
+  context->DrawIndexed(indices.size() , 0u, 0u);
 }
 
 std::array<Animation, dino::total> BuildAnimations()
@@ -369,70 +369,25 @@ void Graphics::SetVertices()
 
   // indices
   {
-    const unsigned short indices[] =
-    { 0, 1, 2
-    , 0, 2, 3
-    };
-
-    dino_.draw_list_size = std::size(indices);
-    sky_.draw_list_size = std::size(indices);
-    mountains_.draw_list_size = std::size(indices);
-    trees_back_.draw_list_size = std::size(indices);
-    trees_front_.draw_list_size = std::size(indices);
-    clouds_.draw_list_size = std::size(indices);
-    ground_.draw_list_size = std::size(indices);
-    grass_.draw_list_size = std::size(indices);
-
-    D3D11_BUFFER_DESC ibd = {};
-    ibd.BindFlags           = D3D11_BIND_INDEX_BUFFER;
-    ibd.Usage               = D3D11_USAGE_IMMUTABLE;
-    ibd.CPUAccessFlags      = 0u;
-    ibd.MiscFlags           = 0u;
-    ibd.ByteWidth           = sizeof(indices);
-    ibd.StructureByteStride = sizeof(unsigned short);
-
-    D3D11_SUBRESOURCE_DATA isd = {};
-    isd.pSysMem = indices;
-
-    device_->CreateBuffer(&ibd, &isd, &dino_.indices);
- 
-    grass_.indices = ground_.indices = clouds_.indices = mountains_.indices = trees_front_.indices = trees_back_.indices = sky_.indices = dino_.indices;
+    dino_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    grass_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    ground_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    clouds_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    mountains_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    trees_front_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    trees_back_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
+    sky_.indices.Update(device_, { 0, 1, 2, 0, 2, 3 });
   }
 
   // uv animation
   {
-    Vertex default_offset{};
-
-    D3D11_BUFFER_DESC uv_desc = {};
-    uv_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    uv_desc.Usage = D3D11_USAGE_DYNAMIC;
-    uv_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    uv_desc.ByteWidth = sizeof default_offset;
-    uv_desc.StructureByteStride = sizeof Vertex;
-
-    D3D11_SUBRESOURCE_DATA uv_sd = {};
-    uv_sd.pSysMem = &default_offset;
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &dino_.cbuffer); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-   
-
-    if (HResult res = device_->CreateBuffer(&uv_desc, &uv_sd, &static_offset_); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
-    mountains_.cbuffer   = static_offset_;
-    trees_back_.cbuffer  = static_offset_;
-    trees_front_.cbuffer = static_offset_;
-    clouds_.cbuffer      = static_offset_;
-    ground_.cbuffer      = static_offset_;
-    grass_.cbuffer       = static_offset_;
+    dino_.cbuffer.Init(device_);
+    mountains_.cbuffer.Init(device_);
+    trees_back_.cbuffer.Init(device_);
+    trees_front_.cbuffer.Init(device_);
+    clouds_.cbuffer.Init(device_);
+    ground_.cbuffer.Init(device_);
+    grass_.cbuffer.Init(device_);
   }
 
   // layout
@@ -465,13 +420,6 @@ void Graphics::DrawAllThisShit()
   //std::cout << "Tick(" << tmp.count() << ")" << std::endl;
   if (animation.Tick(tmp))
   {
-    D3D11_MAPPED_SUBRESOURCE mapped;
-    if (HResult res = context_->Map(dino_.cbuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped); !res)
-    {
-      std::cerr << __func__ << ":" << __LINE__ << " error: " << std::hex << static_cast<HRESULT>(res) << std::endl;
-      std::terminate();
-    }
-
     Vertex newUV{};
 
     if (g_settings->left ) {
@@ -498,9 +446,14 @@ void Graphics::DrawAllThisShit()
     newUV.x = dino_position_.x;
     newUV.y = dino_position_.y;
 
-    memcpy(mapped.pData, &newUV, sizeof newUV);
 
-    context_->Unmap(dino_.cbuffer.Get(), 0);
+    PerFrameBuffer pfb;
+    pfb.x = newUV.x;
+    pfb.y = newUV.y;
+    pfb.u = newUV.u;
+    pfb.v = newUV.v;
+
+    dino_.cbuffer.Update(context_, pfb);
   }
 
 
