@@ -5,14 +5,14 @@
 
 struct Settings
 {
-  constexpr uint16_t width()  const { return 688; }
-  constexpr uint16_t height() const { return 432; }
+  static constexpr uint16_t width  = 688;
+  static constexpr uint16_t height = 432;
 
-  static constexpr const float ratio = 432.0f / 688.0f;
+  static constexpr const float ratio = static_cast<float>(height) / static_cast<float>(width);
 
   constexpr float pxToX(uint16_t px)
   {
-    const float halfWidth = width() / 2;
+    const float halfWidth = width / 2;
     if (px == halfWidth) { 
       return 0.0f;
     } else {
@@ -27,7 +27,7 @@ struct Settings
 
   constexpr float pxToY(uint16_t px)
   {
-    const float halfHeight = height() / 2;
+    const float halfHeight = height / 2;
     if (px == halfHeight) { 
       return 0.0f;
     } else {

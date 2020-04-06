@@ -5,12 +5,12 @@ Window::Window(
     const char* title)
   : window::Window(
       wnd_class,
-      g_settings->width(),
-      g_settings->height(),
+      g_settings->width,
+      g_settings->height,
       title)
   , graphics_(
-      g_settings->width(),
-      g_settings->height(),
+      g_settings->width,
+      g_settings->height,
       handle())
 {
 }

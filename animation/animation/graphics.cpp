@@ -325,14 +325,18 @@ void Graphics::SetVertices()
     };
 
   // vertices
+  
+  const uint16_t sw = g_settings->width;
+  const uint16_t sh = g_settings->height;
+
   dino_.vertices = createVertexBuffer(device_,
       { { g_settings->pxToX(         40), g_settings->pxToY(391 - 24 * 2),           0.0f, 0.0f }
       , { g_settings->pxToX(40 + 24 * 2), g_settings->pxToY(         391), 24.0f / 576.0f, 1.0f }
       });
 
   sky_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(  0), 0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(211), 1.0f, 1.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(  0), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(211), 1.0f, 1.0f } // 3
     });
 
   clouds_.vertices = createVertexBuffer(device_,
@@ -341,28 +345,28 @@ void Graphics::SetVertices()
     });
 
   mountains_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(132), 0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(259), 1.0f, 1.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(132), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(259), 1.0f, 1.0f } // 3
     });
 
   trees_back_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(192 - 20), 0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(391 - 20), 1.0f, 1.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(192 - 20), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(391 - 20), 1.0f, 1.0f } // 3
     });
 
   trees_front_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(235), 0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(383), 1.0f, 1.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(235), 0.0f, 0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(383), 1.0f, 1.0f } // 3
     });
 
   ground_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(383)                 , 0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(g_settings->height()), float(g_settings->width()) / 16.0f, float(g_settings->height() - 383) / 16.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(383),              0.0f,                    0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(sh) , float(sw) / 16.0f, float(sh - 383) / 16.0f } // 3
     });
 
   grass_.vertices = createVertexBuffer(device_,
-    { { g_settings->pxToX(                  0), g_settings->pxToY(     383),                               0.0f, 0.0f } // 1
-    , { g_settings->pxToX(g_settings->width()), g_settings->pxToY(383 + 16), float(g_settings->width()) / 16.0f, 1.0f } // 3
+    { { g_settings->pxToX( 0), g_settings->pxToY(     383),              0.0f, 0.0f } // 1
+    , { g_settings->pxToX(sw), g_settings->pxToY(383 + 16), float(sw) / 16.0f, 1.0f } // 3
     });
 
 
@@ -461,8 +465,8 @@ void Graphics::DrawAllThisShit()
   // configure viewport
   {
     D3D11_VIEWPORT vp;
-    vp.Width    = g_settings->width();
-    vp.Height   = g_settings->height();
+    vp.Width    = g_settings->width;
+    vp.Height   = g_settings->height;
     vp.MinDepth = 0;
     vp.MaxDepth = 1;
     vp.TopLeftX = 0;
